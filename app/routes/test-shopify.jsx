@@ -1,4 +1,6 @@
-export async function GET() {
+import { json } from "@remix-run/node";
+
+export async function loader() {
   const shop = process.env.SHOP_CUSTOM_DOMAIN;
   const token = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
 
@@ -32,5 +34,5 @@ export async function GET() {
   );
 
   const data = await response.json();
-  return Response.json(data);
+  return json(data);
 }
