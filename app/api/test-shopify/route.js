@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+export async function GET() {
   const shop = process.env.SHOP_CUSTOM_DOMAIN;
   const token = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
 
@@ -32,5 +32,5 @@ export default async function handler(req, res) {
   );
 
   const data = await response.json();
-  res.status(200).json(data);
+  return Response.json(data);
 }
