@@ -1,3 +1,5 @@
+import { json } from "@remix-run/node";
+
 export async function loader() {
   const shop = process.env.SHOP_CUSTOM_DOMAIN;
   const token = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
@@ -13,17 +15,9 @@ export async function loader() {
       body: JSON.stringify({
         query: `
           {
-            shop {
-              name
-              myshopifyDomain
-            }
+            shop { name myshopifyDomain }
             products(first: 5) {
-              edges {
-                node {
-                  id
-                  title
-                }
-              }
+              edges { node { id title } }
             }
           }
         `
@@ -32,7 +26,10 @@ export async function loader() {
   );
 
   const data = await response.json();
-  return new Response(JSON.stringify(data), {
-    headers: { "Content-Type": "application/json" },
-  });
+  return json(data);
+}
+
+// 👇 THIS is what makes the route exist
+export default function TestShopify() {
+  return null;
 }
