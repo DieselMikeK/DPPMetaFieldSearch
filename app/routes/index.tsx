@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-export default function SearchSKU() {
+export default function Index() {
   const [sku, setSku] = useState("");
-  const [searchResults, setSearchResults] = useState<any>({ results: [] });
+  const [searchResults, setSearchResults] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,6 +16,11 @@ export default function SearchSKU() {
       const response = await fetch(`/search-sku?sku=${encodeURIComponent(sku)}`);
       const data = await response.json();
 
+      // Ensure results is always an array
+      if (!data.results) {
+        data.results = [];
+      }
+
       setSearchResults(data);
       if (data.error) setError(data.error);
     } catch (err: any) {
@@ -27,9 +32,13 @@ export default function SearchSKU() {
     }
   };
 
+  // Safe access to results
+  const results = searchResults?.results || [];
+  const hasResults = Array.isArray(results) && results.length > 0;
+
   return (
     <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <h1>Search Products by SKU</h1>
+      <h1>DPP Metafield Search</h1>
 
       <div style={{ marginBottom: "20px" }}>
         <input
@@ -38,15 +47,16 @@ export default function SearchSKU() {
           onChange={(e) => setSku(e.target.value)}
           placeholder="Enter SKU..."
           style={{ padding: "8px", width: "300px", marginRight: "10px" }}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
         <button onClick={handleSearch} disabled={loading}>
           {loading ? "Searching..." : "Search"}
         </button>
       </div>
 
-      {error && <div style={{ color: "red", marginBottom: "20px" }}>{error}</div>}
+      {error && <div style={{ color: "red", marginBottom: "20px" }}>Error: {error}</div>}
 
-      {searchResults?.results?.length > 0 ? (
+      {hasResults ? (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ backgroundColor: "#f0f0f0" }}>
@@ -57,7 +67,7 @@ export default function SearchSKU() {
             </tr>
           </thead>
           <tbody>
-            {searchResults.results.map((result: any, idx: number) => (
+            {results.map((result: any, idx: number) => (
               <tr key={idx}>
                 <td style={{ border: "1px solid #ddd", padding: "8px" }}>{result.productTitle}</td>
                 <td style={{ border: "1px solid #ddd", padding: "8px" }}>{result.sku}</td>
@@ -68,7 +78,7 @@ export default function SearchSKU() {
           </tbody>
         </table>
       ) : (
-        !loading && <p>No results found for SKU: {sku}</p>
+        !loading && searchResults && <p>No results found for SKU: {sku}</p>
       )}
     </div>
   );

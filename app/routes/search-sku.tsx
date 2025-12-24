@@ -6,20 +6,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const sku = url.searchParams.get("sku");
 
     if (!sku) {
-      return new Response(
-        JSON.stringify({ results: [], error: "Missing SKU query parameter" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return Response.json({ results: [], error: "Missing SKU query parameter" }, { status: 400 });
     }
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
 
     if (!SHOP || !TOKEN) {
-      return new Response(
-        JSON.stringify({ results: [], error: "Missing Shopify credentials" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      return Response.json({ results: [], error: "Missing Shopify credentials" }, { status: 500 });
     }
 
     const query = `
@@ -55,25 +49,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Shopify-Access-Token": TOKEN || "",
+        "X-Shopify-Access-Token": TOKEN,
       },
       body: JSON.stringify({ query }),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      return new Response(
-        JSON.stringify({ results: [], error: "Shopify API error", details: text }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      console.error("Shopify API error:", text);
+      return Response.json({ results: [], error: "Shopify API error", details: text }, { status: 500 });
     }
 
     const responseData = await response.json();
+
     if (responseData.errors) {
-      return new Response(
-        JSON.stringify({ results: [], error: "GraphQL errors", details: responseData.errors }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      console.error("GraphQL errors:", responseData.errors);
+      return Response.json({ results: [], error: "GraphQL errors", details: responseData.errors }, { status: 500 });
     }
 
     const results: any[] = [];
@@ -81,28 +72,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     for (const productEdge of responseData.data.products.edges) {
       const product = productEdge.node;
 
-      // Safely parse metafields
-      let addOnsArray: any[] = [];
-      let optionsArray: any[] = [];
+      const addOnsValue = product.addOns?.value || null;
+      const optionsValue = product.options?.value || null;
 
-      try {
-        addOnsArray = product.addOns?.value ? JSON.parse(product.addOns.value) : [];
-      } catch (e) {
-        addOnsArray = [];
-      }
+      const hasAddOns = addOnsValue ? (JSON.parse(addOnsValue) || []).length > 0 : false;
+      const hasOptions = optionsValue ? (JSON.parse(optionsValue) || []).length > 0 : false;
 
-      try {
-        optionsArray = product.options?.value ? JSON.parse(product.options.value) : [];
-      } catch (e) {
-        optionsArray = [];
-      }
-
-      const hasAddOns = addOnsArray.length > 0;
-      const hasOptions = optionsArray.length > 0;
-
-      // Only include variants that match the SKU
       for (const variantEdge of product.variants.edges) {
         const variant = variantEdge.node;
+
         if (variant.sku.toLowerCase().includes(sku.toLowerCase())) {
           results.push({
             productId: product.id,
@@ -110,22 +88,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
             variantId: variant.id,
             sku: variant.sku,
             addOnsMetaobject: hasAddOns ? "Yes" : "No",
-            addOnsValue: addOnsArray,
+            addOnsValue,
             optionsMetaobject: hasOptions ? "Yes" : "No",
-            optionsValue: optionsArray,
+            optionsValue,
           });
         }
       }
     }
 
-    return new Response(JSON.stringify({ results }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json({ results });
   } catch (err: any) {
-    return new Response(
-      JSON.stringify({ results: [], error: err.message || "Unexpected error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    console.error("Unexpected error:", err);
+    return Response.json({ results: [], error: err.message || "Unexpected error" }, { status: 500 });
   }
 }
