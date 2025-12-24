@@ -1,89 +1,132 @@
-// app/routes/app._index.tsx
 import { useState } from "react";
 
-interface VariantResult {
-  id: string;
-  title: string;
+interface SearchResult {
+  productId: string;
+  productTitle: string;
+  variantId: string;
   sku: string;
-  hasAddOns: boolean;
-  hasOptions: boolean;
+  addOnsMetaobject: string;
+  addOnsValue: any[];
+  optionsMetaobject: string;
+  optionsValue: any[];
 }
 
-export default function AppHome() {
+interface SearchResponse {
+  results?: SearchResult[];
+  error?: string;
+}
+
+export default function Index() {
   const [sku, setSku] = useState("");
-  const [results, setResults] = useState<VariantResult[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const searchSKU = async () => {
+  const handleSearch = async () => {
+    if (!sku.trim()) return;
+
     setLoading(true);
     setError(null);
+    setSearchResults([]); // Clear previous results
 
     try {
-      const res = await fetch(`/search-sku?sku=${encodeURIComponent(sku)}`);
-      if (!res.ok) throw new Error("Failed to fetch products");
+      const response = await fetch(`/search-sku?sku=${encodeURIComponent(sku)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data: SearchResponse = await response.json();
 
-      const data = await res.json();
-      setResults(data.variants);
+      console.log("Received data:", data); // Debug log
+
+      // Validate the response structure
+      if (data && typeof data === 'object') {
+        if (data.error) {
+          setError(data.error);
+        }
+        
+        if (Array.isArray(data.results)) {
+          setSearchResults(data.results);
+        } else {
+          console.warn("data.results is not an array:", data.results);
+          setSearchResults([]);
+        }
+      } else {
+        console.error("Invalid response format:", data);
+        setError("Invalid response from server");
+        setSearchResults([]);
+      }
     } catch (err: any) {
-      setError(err.message || "Error fetching variants");
+      console.error("Search failed:", err);
+      setError(err.message || "Search failed");
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-      <h1>DPP Metafield Search</h1><p>Hi</p>
-      <p>Search a product SKU and see variant info and metafield presence:</p>
+  const hasResults = searchResults.length > 0;
 
-      <input
-        type="text"
-        placeholder="Enter SKU"
-        value={sku}
-        onChange={(e) => setSku(e.currentTarget.value)}
-        style={{ marginRight: "0.5rem", padding: "0.5rem" }}
-      />
-      <button onClick={searchSKU} style={{ padding: "0.5rem 1rem" }}>
-        Search
-      </button>
+  return (
+    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
+      <h1>DPP Metafield Search</h1>
+
+      <div style={{ marginBottom: "20px" }}>
+        <input
+          type="text"
+          value={sku}
+          onChange={(e) => setSku(e.target.value)}
+          placeholder="Enter SKU..."
+          style={{ padding: "8px", width: "300px", marginRight: "10px" }}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+        />
+        <button onClick={handleSearch} disabled={loading}>
+          {loading ? "Searching..." : "Search"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: "red", marginBottom: "20px", padding: "10px", backgroundColor: "#fee" }}>
+          Error: {error}
+        </div>
+      )}
 
       {loading && <p>Loading...</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
 
-      {results.length > 0 && (
-        <table
-          style={{
-            marginTop: "1rem",
-            borderCollapse: "collapse",
-            width: "100%",
-          }}
-        >
+      {hasResults && !loading && (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>
-              <th style={{ border: "1px solid #ccc", padding: "0.5rem" }}>Title</th>
-              <th style={{ border: "1px solid #ccc", padding: "0.5rem" }}>Variant ID</th>
-              <th style={{ border: "1px solid #ccc", padding: "0.5rem" }}>SKU</th>
-              <th style={{ border: "1px solid #ccc", padding: "0.5rem" }}>Add-Ons Metaobject</th>
-              <th style={{ border: "1px solid #ccc", padding: "0.5rem" }}>Options Metaobject</th>
+            <tr style={{ backgroundColor: "#f0f0f0" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px" }}>Product Title</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px" }}>SKU</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px" }}>Has Add-ons</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px" }}>Has Options</th>
             </tr>
           </thead>
           <tbody>
-            {results.map((v) => (
-              <tr key={v.id}>
-                <td style={{ border: "1px solid #ccc", padding: "0.5rem" }}>{v.title}</td>
-                <td style={{ border: "1px solid #ccc", padding: "0.5rem" }}>{v.id}</td>
-                <td style={{ border: "1px solid #ccc", padding: "0.5rem" }}>{v.sku}</td>
-                <td style={{ border: "1px solid #ccc", padding: "0.5rem" }}>
-                  {v.hasAddOns ? "Yes" : "No"}
+            {searchResults.map((result, idx) => (
+              <tr key={idx}>
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                  {result.productTitle || "N/A"}
                 </td>
-                <td style={{ border: "1px solid #ccc", padding: "0.5rem" }}>
-                  {v.hasOptions ? "Yes" : "No"}
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                  {result.sku || "N/A"}
+                </td>
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                  {result.addOnsMetaobject || "No"}
+                </td>
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                  {result.optionsMetaobject || "No"}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {!hasResults && !loading && sku && (
+        <p>No results found for SKU: {sku}</p>
       )}
     </div>
   );
