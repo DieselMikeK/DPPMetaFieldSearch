@@ -1,7 +1,7 @@
 // app/routes/index.tsx
 import { useEffect, useState } from "react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useFetcher } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import { useFetcher } from "react-router";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   // No need to authenticate if using Admin API token
