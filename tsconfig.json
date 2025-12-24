@@ -13,10 +13,11 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "node",
     "target": "ES2022",
     "baseUrl": ".",
     "types": ["@react-router/node", "vite/client", "@shopify/polaris-types"],
+    "typeRoots": ["./node_modules/@types", "./types"]
     "rootDirs": [".", "./.react-router/types"]
   }
 }
