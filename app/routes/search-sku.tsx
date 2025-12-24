@@ -1,18 +1,26 @@
-// server-side loader
-export async function loader({ request }: any) {
+import type { LoaderFunctionArgs } from "react-router";
+
+export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const url = new URL(request.url);
     const sku = url.searchParams.get("sku");
 
     if (!sku) {
       return new Response(
-        JSON.stringify({ error: "Missing SKU query parameter" }),
+        JSON.stringify({ results: [], error: "Missing SKU query parameter" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+
+    if (!SHOP || !TOKEN) {
+      return new Response(
+        JSON.stringify({ results: [], error: "Missing Shopify credentials" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const query = `
       query {
@@ -55,24 +63,22 @@ export async function loader({ request }: any) {
     if (!response.ok) {
       const text = await response.text();
       return new Response(
-        JSON.stringify({ error: "Shopify API error", details: text }),
+        JSON.stringify({ results: [], error: "Shopify API error", details: text }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const responseData = await response.json();
-
     if (responseData.errors) {
       return new Response(
-        JSON.stringify({ error: "GraphQL errors", details: responseData.errors }),
+        JSON.stringify({ results: [], error: "GraphQL errors", details: responseData.errors }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const { data } = responseData;
-    const results = [];
+    const results: any[] = [];
 
-    for (const productEdge of data.products.edges) {
+    for (const productEdge of responseData.data.products.edges) {
       const product = productEdge.node;
 
       // Safely parse metafields
@@ -118,7 +124,7 @@ export async function loader({ request }: any) {
     });
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: err.message || "Unexpected error", stack: err.stack }),
+      JSON.stringify({ results: [], error: err.message || "Unexpected error" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
