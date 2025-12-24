@@ -34,7 +34,7 @@ export default function AppHome() {
 
   return (
     <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-      <h1>DPP Metafield Search</h1>
+      <h1>DPP Metafield Search</h1><p>Hi</p>
       <p>Search a product SKU and see variant info and metafield presence:</p>
 
       <input
