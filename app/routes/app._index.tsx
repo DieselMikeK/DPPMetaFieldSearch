@@ -7,7 +7,25 @@ import type {
 import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import { boundary } from "@shopify/shopify-app-react-router/dist/ts/server";
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      "s-page": any;
+      "s-button": any;
+      "s-section": any;
+      "s-paragraph": any;
+      "s-link": any;
+      "s-stack": any;
+      "s-box": any;
+      "s-heading": any;
+      "s-unordered-list": any;
+      "s-list-item": any;
+      "s-text": any;
+    }
+  }
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);

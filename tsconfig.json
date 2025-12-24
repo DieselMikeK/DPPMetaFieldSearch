@@ -16,7 +16,7 @@
     "moduleResolution": "node",
     "target": "ES2022",
     "baseUrl": ".",
-    "types": ["@react-router/node", "vite/client", "@shopify/polaris-types"],
+    "types": ["@react-router/node", "vite/client"],
     "typeRoots": ["./node_modules/@types", "./types"],
     "rootDirs": [".", "./.react-router/types"]
   }
