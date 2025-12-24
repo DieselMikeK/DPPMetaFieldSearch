@@ -1,4 +1,3 @@
-// app/routes/index.tsx
 import { useEffect, useState } from "react";
 
 export default function Index() {
@@ -6,7 +5,6 @@ export default function Index() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch from your /test-shopify route
   useEffect(() => {
     const fetchProducts = async () => {
       setLoading(true);
@@ -25,9 +23,9 @@ export default function Index() {
   }, []);
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+    <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
       <h1>DPP Metafield Search</h1>
-      <p>Headless app landing page — fetching products from Shopify API:</p>
+      <p>Live products from your Shopify store:</p>
 
       {loading && <p>Loading products...</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
@@ -35,7 +33,9 @@ export default function Index() {
       <ul>
         {products.map((product) => (
           <li key={product.id}>
-            {product.title} (ID: {product.id})
+            {product.title}
+            <br />
+            <small>{product.id}</small>
           </li>
         ))}
       </ul>
