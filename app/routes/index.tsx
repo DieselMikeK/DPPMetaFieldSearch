@@ -2,7 +2,7 @@ import { useState } from "react";
 
 export default function Index() {
   const [sku, setSku] = useState("");
-  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searchResults, setSearchResults] = useState<{ results: any[] }>({ results: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +17,7 @@ export default function Index() {
       const data = await response.json();
 
       // Ensure results is always an array
-      if (!data.results) {
+      if (!data || !Array.isArray(data.results)) {
         data.results = [];
       }
 
@@ -33,8 +33,8 @@ export default function Index() {
   };
 
   // Safe access to results
-  const results = searchResults?.results || [];
-  const hasResults = Array.isArray(results) && results.length > 0;
+  const results = Array.isArray(searchResults?.results) ? searchResults.results : [];
+  const hasResults = results.length > 0;
 
   return (
     <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
@@ -67,7 +67,7 @@ export default function Index() {
             </tr>
           </thead>
           <tbody>
-            {results.map((result: any, idx: number) => (
+            {results.map((result, idx) => (
               <tr key={idx}>
                 <td style={{ border: "1px solid #ddd", padding: "8px" }}>{result.productTitle}</td>
                 <td style={{ border: "1px solid #ddd", padding: "8px" }}>{result.sku}</td>
@@ -78,7 +78,7 @@ export default function Index() {
           </tbody>
         </table>
       ) : (
-        !loading && searchResults && <p>No results found for SKU: {sku}</p>
+        !loading && <p>No results found for SKU: {sku}</p>
       )}
     </div>
   );
