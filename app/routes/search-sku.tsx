@@ -1,5 +1,7 @@
-// server-side loader
-export async function loader({ request }: any) {
+// app/routes/search-sku.tsx
+import type { LoaderFunctionArgs } from "react-router";
+
+export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const url = new URL(request.url);
     const sku = url.searchParams.get("sku");
@@ -14,31 +16,35 @@ export async function loader({ request }: any) {
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
 
-    // GraphQL query to fetch product by variant SKU
+    if (!SHOP || !TOKEN) {
+      return new Response(
+        JSON.stringify({ error: "Missing Shopify shop domain or Admin API token" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const query = `
-      query ($sku: String!) {
-        products(first: 5, query: $sku) {
+      query {
+        products(first: 10, query: "sku:${sku}") {
           edges {
             node {
               id
               title
-              variants(first: 5, query: $sku) {
+              variants(first: 10) {
                 edges {
                   node {
                     id
                     sku
-                    metafields(first: 10) {
-                      edges {
-                        node {
-                          namespace
-                          key
-                          type
-                          value
-                        }
-                      }
-                    }
                   }
                 }
+              }
+              addOns: metafield(namespace: "custom", key: "add_ons") {
+                type
+                value
+              }
+              options: metafield(namespace: "custom", key: "options") {
+                type
+                value
               }
             }
           }
@@ -46,13 +52,14 @@ export async function loader({ request }: any) {
       }
     `;
 
-    const response = await fetch(`https://${SHOP}/admin/api/2025-10/graphql.json`, {
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.set("X-Shopify-Access-Token", TOKEN);
+
+    const response = await fetch(`https://${SHOP}/admin/api/2024-10/graphql.json`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": TOKEN,
-      },
-      body: JSON.stringify({ query, variables: { sku } }),
+      headers,
+      body: JSON.stringify({ query }),
     });
 
     if (!response.ok) {
@@ -63,38 +70,40 @@ export async function loader({ request }: any) {
       );
     }
 
-    const { data } = await response.json();
+    const responseData = await response.json();
 
-    const results = [];
+    if (responseData.errors) {
+      return new Response(
+        JSON.stringify({ error: "GraphQL errors", details: responseData.errors }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
-    for (const productEdge of data.products.edges) {
+    const results: any[] = [];
+
+    for (const productEdge of responseData.data.products.edges) {
       const product = productEdge.node;
+
+      const hasAddOns =
+        product.addOns?.value && JSON.parse(product.addOns.value).length > 0;
+      const hasOptions =
+        product.options?.value && JSON.parse(product.options.value).length > 0;
 
       for (const variantEdge of product.variants.edges) {
         const variant = variantEdge.node;
 
-        // Find add_ons and options metafields
-        const addOnsMF = variant.metafields.edges.find(
-          (mf: any) => mf.node.namespace === "custom" && mf.node.key === "add_ons"
-        );
-        const optionsMF = variant.metafields.edges.find(
-          (mf: any) => mf.node.namespace === "custom" && mf.node.key === "options"
-        );
-
-        const hasAddOns =
-          addOnsMF && addOnsMF.node.value && JSON.parse(addOnsMF.node.value).length > 0;
-
-        const hasOptions =
-          optionsMF && optionsMF.node.value && JSON.parse(optionsMF.node.value).length > 0;
-
-        results.push({
-          productId: product.id,
-          productTitle: product.title,
-          variantId: variant.id,
-          sku: variant.sku,
-          addOnsMetaobject: hasAddOns ? "Yes" : "No",
-          optionsMetaobject: hasOptions ? "Yes" : "No",
-        });
+        if (variant.sku.toLowerCase().includes(sku.toLowerCase())) {
+          results.push({
+            productId: product.id,
+            productTitle: product.title,
+            variantId: variant.id,
+            sku: variant.sku,
+            addOnsMetaobject: hasAddOns ? "Yes" : "No",
+            addOnsValue: product.addOns?.value || null,
+            optionsMetaobject: hasOptions ? "Yes" : "No",
+            optionsValue: product.options?.value || null,
+          });
+        }
       }
     }
 
@@ -104,7 +113,7 @@ export async function loader({ request }: any) {
     });
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: err.message || "Unexpected error" }),
+      JSON.stringify({ error: err.message || "Unexpected error", stack: err.stack }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
