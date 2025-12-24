@@ -1,7 +1,5 @@
-// app/routes/search-sku.tsx
-import type { LoaderFunctionArgs } from "react-router";
-
-export async function loader({ request }: LoaderFunctionArgs) {
+// server-side loader
+export async function loader({ request }: any) {
   try {
     const url = new URL(request.url);
     const sku = url.searchParams.get("sku");
@@ -15,13 +13,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
-
-    if (!SHOP || !TOKEN) {
-      return new Response(
-        JSON.stringify({ error: "Missing Shopify shop domain or Admin API token" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
 
     const query = `
       query {
@@ -52,13 +43,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     `;
 
-    const headers = new Headers();
-    headers.set("Content-Type", "application/json");
-    headers.set("X-Shopify-Access-Token", TOKEN);
-
     const response = await fetch(`https://${SHOP}/admin/api/2024-10/graphql.json`, {
       method: "POST",
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": TOKEN || "",
+      },
       body: JSON.stringify({ query }),
     });
 
@@ -79,19 +69,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
       );
     }
 
-    const results: any[] = [];
+    const { data } = responseData;
+    const results = [];
 
-    for (const productEdge of responseData.data.products.edges) {
+    for (const productEdge of data.products.edges) {
       const product = productEdge.node;
 
-      const hasAddOns =
-        product.addOns?.value && JSON.parse(product.addOns.value).length > 0;
-      const hasOptions =
-        product.options?.value && JSON.parse(product.options.value).length > 0;
+      // Safely parse metafields
+      let addOnsArray: any[] = [];
+      let optionsArray: any[] = [];
 
+      try {
+        addOnsArray = product.addOns?.value ? JSON.parse(product.addOns.value) : [];
+      } catch (e) {
+        addOnsArray = [];
+      }
+
+      try {
+        optionsArray = product.options?.value ? JSON.parse(product.options.value) : [];
+      } catch (e) {
+        optionsArray = [];
+      }
+
+      const hasAddOns = addOnsArray.length > 0;
+      const hasOptions = optionsArray.length > 0;
+
+      // Only include variants that match the SKU
       for (const variantEdge of product.variants.edges) {
         const variant = variantEdge.node;
-
         if (variant.sku.toLowerCase().includes(sku.toLowerCase())) {
           results.push({
             productId: product.id,
@@ -99,9 +104,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
             variantId: variant.id,
             sku: variant.sku,
             addOnsMetaobject: hasAddOns ? "Yes" : "No",
-            addOnsValue: product.addOns?.value || null,
+            addOnsValue: addOnsArray,
             optionsMetaobject: hasOptions ? "Yes" : "No",
-            optionsValue: product.options?.value || null,
+            optionsValue: optionsArray,
           });
         }
       }
