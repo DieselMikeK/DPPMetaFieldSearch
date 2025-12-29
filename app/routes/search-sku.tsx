@@ -1,5 +1,5 @@
 // src/routes/search-sku.ts
-import type { Request, Response } from "express";
+import type { LoaderFunction } from "react-router";
 
 interface ParentProduct {
   productId: string;
@@ -10,18 +10,14 @@ interface ParentProduct {
 }
 
 interface MetaobjectFieldReference {
-  node: {
-    id: string;
-  };
+  node: { id: string };
 }
 
 interface MetaobjectField {
   key: string;
   type: string;
   value: string | null;
-  references?: {
-    edges: MetaobjectFieldReference[];
-  };
+  references?: { edges: MetaobjectFieldReference[] };
 }
 
 interface Metaobject {
@@ -41,15 +37,9 @@ interface ProductVariantEdge {
 interface ProductNode {
   id: string;
   title: string;
-  variants: {
-    edges: ProductVariantEdge[];
-  };
-  addOns?: {
-    value: string;
-  };
-  options?: {
-    value: string;
-  };
+  variants: { edges: ProductVariantEdge[] };
+  addOns?: { value: string };
+  options?: { value: string };
 }
 
 interface ProductEdge {
@@ -59,10 +49,7 @@ interface ProductEdge {
 interface ProductsResponse {
   products: {
     edges: ProductEdge[];
-    pageInfo: {
-      hasNextPage: boolean;
-      endCursor: string | null;
-    };
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
 }
 
@@ -75,30 +62,39 @@ interface MetaobjectMatch {
 interface SearchResponse {
   results: MetaobjectMatch[];
   searchedSku: string;
-  foundInProducts: {
-    id: string;
-    title: string;
-    sku: string | null;
-  }[];
+  foundInProducts: { id: string; title: string; sku: string | null }[];
   message?: string;
   error?: string;
 }
 
-export const searchSkuHandler = async (req: Request, res: Response) => {
+export const loader: LoaderFunction = async ({ request }) => {
   try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = new URL(request.url);
     const sku = url.searchParams.get("sku");
-    if (!sku) return res.status(400).json({ results: [], error: "Missing SKU" });
+    if (!sku) {
+      return new Response(JSON.stringify({ results: [], error: "Missing SKU" }), { status: 400 });
+    }
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
-    if (!SHOP || !TOKEN) return res.status(500).json({ results: [], error: "Missing credentials" });
+    if (!SHOP || !TOKEN) {
+      return new Response(JSON.stringify({ results: [], error: "Missing credentials" }), { status: 500 });
+    }
 
     // --- STEP 1: Find products matching SKU ---
     const matchingProducts = await fetchProductsBySku(SHOP, TOKEN, sku);
+
     if (matchingProducts.length === 0) {
-      return res.json({ results: [], message: "No products found with that SKU", searchedSku: sku, foundInProducts: [] });
+      return new Response(
+        JSON.stringify({
+          results: [],
+          message: "No products found with that SKU",
+          searchedSku: sku,
+          foundInProducts: [],
+        })
+      );
     }
+
     const productIds = matchingProducts.map((p) => p.id);
 
     // --- STEP 2: Fetch all metaobjects ---
@@ -110,11 +106,7 @@ export const searchSkuHandler = async (req: Request, res: Response) => {
         const references = mo.fields.flatMap((f) => f.references?.edges.map((e) => e.node.id) ?? []);
         return productIds.some((id) => references.includes(id));
       })
-      .map((mo) => ({
-        metaobjectId: mo.id,
-        metaobjectName: mo.displayName,
-        parentProducts: [],
-      }));
+      .map((mo) => ({ metaobjectId: mo.id, metaobjectName: mo.displayName, parentProducts: [] }));
 
     // --- STEP 4: Fetch parent products referencing these metaobjects ---
     const parentProducts = await findParentProducts(SHOP, TOKEN, matchingMetaobjects.map((m) => m.metaobjectId));
@@ -124,7 +116,6 @@ export const searchSkuHandler = async (req: Request, res: Response) => {
       match.parentProducts = parentProducts.filter((p) => p.metaobjectIds.includes(match.metaobjectId));
     }
 
-    // --- STEP 5: Return results ---
     const response: SearchResponse = {
       results: matchingMetaobjects,
       searchedSku: sku,
@@ -139,10 +130,10 @@ export const searchSkuHandler = async (req: Request, res: Response) => {
       response.message = `SKU "${sku}" found in products but not used in any metaobjects`;
     }
 
-    return res.json(response);
+    return new Response(JSON.stringify(response));
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ results: [], error: err.message });
+    return new Response(JSON.stringify({ results: [], error: err.message }), { status: 500 });
   }
 };
 
@@ -159,9 +150,7 @@ async function fetchProductsBySku(shop: string, token: string, sku: string): Pro
             id
             title
             variants(first: 10) {
-              edges {
-                node { sku }
-              }
+              edges { node { sku } }
             }
           }
         }
@@ -190,22 +179,7 @@ async function fetchAllMetaobjectsWithProducts(shop: string, token: string): Pro
     const query = `
       query {
         metaobjects(first: 250, type: "product_builder_section"${cursor ? `, after: "${cursor}"` : ""}) {
-          edges {
-            node {
-              id
-              displayName
-              fields {
-                key
-                type
-                value
-                references(first: 50) {
-                  edges {
-                    node { id }
-                  }
-                }
-              }
-            }
-          }
+          edges { node { id displayName fields { key type value references(first: 50) { edges { node { id } } } } } }
           pageInfo { hasNextPage endCursor }
         }
       }
@@ -235,15 +209,7 @@ async function findParentProducts(shop: string, token: string, metaobjectIds: st
     const query = `
       query {
         products(first: 250${cursor ? `, after: "${cursor}"` : ""}) {
-          edges {
-            node {
-              id
-              title
-              variants(first: 1) { edges { node { sku } } }
-              addOns: metafield(namespace: "custom", key: "add_ons") { value }
-              options: metafield(namespace: "custom", key: "options") { value }
-            }
-          }
+          edges { node { id title variants(first: 1) { edges { node { sku } } } addOns: metafield(namespace: "custom", key: "add_ons") { value } options: metafield(namespace: "custom", key: "options") { value } } }
           pageInfo { hasNextPage endCursor }
         }
       }

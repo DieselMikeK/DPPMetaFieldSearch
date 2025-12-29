@@ -1,4 +1,6 @@
+// src/routes/index.tsx
 import { useState } from "react";
+import { useFetcher } from "react-router";
 
 interface ParentProduct {
   productId: string;
@@ -27,40 +29,12 @@ interface SearchResponse {
 
 export default function Index() {
   const [sku, setSku] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const fetcher = useFetcher<SearchResponse>();
+  const searchResults = fetcher.data ?? null;
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     if (!sku.trim()) return;
-
-    setLoading(true);
-    setError(null);
-    setSearchResults(null);
-
-    try {
-      const response = await fetch(`/search-sku?sku=${encodeURIComponent(sku)}`);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: SearchResponse = await response.json();
-
-      console.log("Received data:", data);
-
-      if (data.error) {
-        setError(data.error);
-      }
-
-      setSearchResults(data);
-    } catch (err: any) {
-      console.error("Search failed:", err);
-      setError(err.message || "Search failed");
-      setSearchResults(null);
-    } finally {
-      setLoading(false);
-    }
+    fetcher.load(`/search-sku?sku=${encodeURIComponent(sku)}`);
   };
 
   const results = searchResults?.results ?? [];
@@ -93,22 +67,22 @@ export default function Index() {
         />
         <button
           onClick={handleSearch}
-          disabled={loading}
+          disabled={fetcher.state === "loading"}
           style={{
             padding: "10px 20px",
             fontSize: "14px",
-            backgroundColor: loading ? "#ccc" : "#008060",
+            backgroundColor: fetcher.state === "loading" ? "#ccc" : "#008060",
             color: "white",
             border: "none",
             borderRadius: "4px",
-            cursor: loading ? "not-allowed" : "pointer",
+            cursor: fetcher.state === "loading" ? "not-allowed" : "pointer",
           }}
         >
-          {loading ? "Searching..." : "Search"}
+          {fetcher.state === "loading" ? "Searching..." : "Search"}
         </button>
       </div>
 
-      {error && (
+      {searchResults?.error && (
         <div
           style={{
             color: "#d72c0d",
@@ -119,11 +93,11 @@ export default function Index() {
             border: "1px solid #fecdca",
           }}
         >
-          <strong>Error:</strong> {error}
+          <strong>Error:</strong> {searchResults.error}
         </div>
       )}
 
-      {loading && (
+      {fetcher.state === "loading" && (
         <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
           <p>Searching through metaobjects... This may take a moment.</p>
         </div>
@@ -155,7 +129,7 @@ export default function Index() {
         </div>
       )}
 
-      {hasResults && !loading && (
+      {hasResults && (
         <>
           <div
             style={{
@@ -229,19 +203,14 @@ export default function Index() {
                     <tbody>
                       {metaobject.parentProducts.map((parent, pIdx) => (
                         <tr key={pIdx}>
-                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>
-                            {parent.productTitle}
-                          </td>
-                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>
-                            {parent.productSku || "N/A"}
-                          </td>
+                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>{parent.productTitle}</td>
+                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>{parent.productSku || "N/A"}</td>
                           <td style={{ border: "1px solid #ccc", padding: "8px" }}>
                             <span
                               style={{
                                 padding: "2px 8px",
                                 borderRadius: "4px",
-                                backgroundColor:
-                                  parent.metafieldType === "add_ons" ? "#e3f2fd" : "#fff3e0",
+                                backgroundColor: parent.metafieldType === "add_ons" ? "#e3f2fd" : "#fff3e0",
                                 fontSize: "12px",
                               }}
                             >
@@ -254,19 +223,15 @@ export default function Index() {
                   </table>
                 </>
               ) : (
-                <p style={{ color: "#999", fontStyle: "italic" }}>
-                  This metaobject is not currently used by any products
-                </p>
+                <p style={{ color: "#999", fontStyle: "italic" }}>This metaobject is not currently used by any products</p>
               )}
             </div>
           ))}
         </>
       )}
 
-      {!hasResults && !loading && searchResults && !searchResults.message && (
-        <p style={{ color: "#666", fontStyle: "italic" }}>
-          No metaobjects found containing SKU: {sku}
-        </p>
+      {!hasResults && fetcher.state !== "loading" && searchResults && !searchResults.message && (
+        <p style={{ color: "#666", fontStyle: "italic" }}>No metaobjects found containing SKU: {sku}</p>
       )}
     </div>
   );
