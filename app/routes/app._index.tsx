@@ -98,8 +98,39 @@ export default function Index() {
       )}
 
       {fetcher.state === "loading" && (
-        <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+        <div
+          style={{
+            padding: "20px",
+            textAlign: "center",
+            color: "#666",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          {/* Spinner */}
+          <div
+            style={{
+              width: "40px",
+              height: "40px",
+              border: "4px solid #ccc",
+              borderTop: "4px solid #008060",
+              borderRadius: "50%",
+              animation: "spin 1s linear infinite",
+              marginBottom: "12px",
+            }}
+          />
           <p>Searching through metaobjects... This may take a moment.</p>
+
+          {/* Spinner keyframes */}
+          <style>
+            {`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}
+          </style>
         </div>
       )}
 
