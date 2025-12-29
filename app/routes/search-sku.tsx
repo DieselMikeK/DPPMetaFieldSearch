@@ -72,13 +72,19 @@ export const loader: LoaderFunction = async ({ request }) => {
     const url = new URL(request.url);
     const sku = url.searchParams.get("sku");
     if (!sku) {
-      return new Response(JSON.stringify({ results: [], error: "Missing SKU" }), { status: 400 });
+      return new Response(JSON.stringify({ results: [], error: "Missing SKU" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
     if (!SHOP || !TOKEN) {
-      return new Response(JSON.stringify({ results: [], error: "Missing credentials" }), { status: 500 });
+      return new Response(JSON.stringify({ results: [], error: "Missing credentials" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // --- STEP 1: Find products matching SKU ---
@@ -91,7 +97,10 @@ export const loader: LoaderFunction = async ({ request }) => {
           message: "No products found with that SKU",
           searchedSku: sku,
           foundInProducts: [],
-        })
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -130,10 +139,15 @@ export const loader: LoaderFunction = async ({ request }) => {
       response.message = `SKU "${sku}" found in products but not used in any metaobjects`;
     }
 
-    return new Response(JSON.stringify(response));
+    return new Response(JSON.stringify(response), {
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err: any) {
     console.error(err);
-    return new Response(JSON.stringify({ results: [], error: err.message }), { status: 500 });
+    return new Response(JSON.stringify({ results: [], error: err.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 };
 
