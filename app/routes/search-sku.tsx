@@ -110,12 +110,20 @@ export const loader: LoaderFunction = async ({ request }) => {
     const metaobjects = await fetchAllMetaobjectsWithProducts(SHOP, TOKEN);
 
     // --- STEP 3: Match metaobjects containing products ---
-    const matchingMetaobjects: MetaobjectMatch[] = metaobjects
-      .filter((mo) => {
-        const references = mo.fields.flatMap((f) => f.references?.edges.map((e) => e.node.id) ?? []);
-        return productIds.some((id) => references.includes(id));
-      })
-      .map((mo) => ({ metaobjectId: mo.id, metaobjectName: mo.displayName, parentProducts: [] }));
+const matchingMetaobjects: MetaobjectMatch[] = metaobjects
+  .filter((mo) => {
+    // Find the "products" field specifically
+    const productsField = mo.fields.find((f) => f.key === "products");
+    
+    if (!productsField?.references?.edges) return false;
+    
+    // Get product IDs from the products field
+    const referencedProductIds = productsField.references.edges.map((e) => e.node.id);
+    
+    // Check if any of our searched products are in this metaobject
+    return productIds.some((id) => referencedProductIds.includes(id));
+  })
+  .map((mo) => ({ metaobjectId: mo.id, metaobjectName: mo.displayName, parentProducts: [] }));
 
     // --- STEP 4: Fetch parent products referencing these metaobjects ---
     const parentProducts = await findParentProducts(SHOP, TOKEN, matchingMetaobjects.map((m) => m.metaobjectId));
