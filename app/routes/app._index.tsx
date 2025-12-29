@@ -63,17 +63,10 @@ export default function Index() {
     }
   };
 
-  // 🛡️ Safe derived data (fixes TypeScript error)
   const results = searchResults?.results ?? [];
-
   const hasResults = results.length > 0;
-
   const totalMetaobjects = results.length;
-
-  const totalParentProducts = results.reduce(
-    (sum, m) => sum + m.parentProducts.length,
-    0
-  );
+  const totalParentProducts = results.reduce((sum, m) => sum + m.parentProducts.length, 0);
 
   return (
     <div style={{ padding: "20px", fontFamily: "sans-serif", maxWidth: "1200px" }}>
@@ -147,7 +140,6 @@ export default function Index() {
           }}
         >
           <p>{searchResults.message}</p>
-
           {searchResults.foundInProducts && searchResults.foundInProducts.length > 0 && (
             <div style={{ marginTop: "10px" }}>
               <strong>Found in these products:</strong>
@@ -185,6 +177,19 @@ export default function Index() {
             </ul>
           </div>
 
+          {searchResults?.foundInProducts && searchResults.foundInProducts.length > 0 && (
+            <div style={{ marginBottom: "30px" }}>
+              <h3>Product(s) with this SKU:</h3>
+              <ul>
+                {searchResults.foundInProducts.map((p, idx) => (
+                  <li key={idx}>
+                    <strong>{p.title}</strong> (SKU: {p.sku})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <h3>Metaobjects containing this SKU:</h3>
 
           {results.map((metaobject, idx) => (
@@ -198,13 +203,61 @@ export default function Index() {
                 backgroundColor: "#fafafa",
               }}
             >
-              <h4 style={{ marginTop: 0 }}>
+              <h4 style={{ marginTop: 0, color: "#303030" }}>
                 {idx + 1}. {metaobject.metaobjectName}
               </h4>
 
-              <p>
-                <strong>Used by {metaobject.parentProducts.length} product(s)</strong>
-              </p>
+              {metaobject.parentProducts.length > 0 ? (
+                <>
+                  <p style={{ margin: "8px 0", color: "#666" }}>
+                    <strong>Used by {metaobject.parentProducts.length} parent product(s):</strong>
+                  </p>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#e8e8e8" }}>
+                        <th style={{ border: "1px solid #ccc", padding: "8px", textAlign: "left" }}>
+                          Parent Product
+                        </th>
+                        <th style={{ border: "1px solid #ccc", padding: "8px", textAlign: "left" }}>
+                          Parent SKU
+                        </th>
+                        <th style={{ border: "1px solid #ccc", padding: "8px", textAlign: "left" }}>
+                          Metafield Type
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metaobject.parentProducts.map((parent, pIdx) => (
+                        <tr key={pIdx}>
+                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>
+                            {parent.productTitle}
+                          </td>
+                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>
+                            {parent.productSku || "N/A"}
+                          </td>
+                          <td style={{ border: "1px solid #ccc", padding: "8px" }}>
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                backgroundColor:
+                                  parent.metafieldType === "add_ons" ? "#e3f2fd" : "#fff3e0",
+                                fontSize: "12px",
+                              }}
+                            >
+                              {parent.metafieldType}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <p style={{ color: "#999", fontStyle: "italic" }}>
+                  This metaobject is not currently used by any products
+                </p>
+              )}
             </div>
           ))}
         </>

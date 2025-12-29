@@ -1,196 +1,290 @@
-import type { LoaderFunctionArgs } from "react-router";
+// src/routes/search-sku.ts
+import type { Request, Response } from "express";
 
-export async function loader({ request }: LoaderFunctionArgs) {
+interface ParentProduct {
+  productId: string;
+  productTitle: string;
+  productSku: string | null;
+  metafieldType: "add_ons" | "options";
+  metaobjectIds: string[];
+}
+
+interface MetaobjectFieldReference {
+  node: {
+    id: string;
+  };
+}
+
+interface MetaobjectField {
+  key: string;
+  type: string;
+  value: string | null;
+  references?: {
+    edges: MetaobjectFieldReference[];
+  };
+}
+
+interface Metaobject {
+  id: string;
+  displayName: string;
+  fields: MetaobjectField[];
+}
+
+interface ProductVariantNode {
+  sku: string | null;
+}
+
+interface ProductVariantEdge {
+  node: ProductVariantNode;
+}
+
+interface ProductNode {
+  id: string;
+  title: string;
+  variants: {
+    edges: ProductVariantEdge[];
+  };
+  addOns?: {
+    value: string;
+  };
+  options?: {
+    value: string;
+  };
+}
+
+interface ProductEdge {
+  node: ProductNode;
+}
+
+interface ProductsResponse {
+  products: {
+    edges: ProductEdge[];
+    pageInfo: {
+      hasNextPage: boolean;
+      endCursor: string | null;
+    };
+  };
+}
+
+interface MetaobjectMatch {
+  metaobjectId: string;
+  metaobjectName: string;
+  parentProducts: ParentProduct[];
+}
+
+interface SearchResponse {
+  results: MetaobjectMatch[];
+  searchedSku: string;
+  foundInProducts: {
+    id: string;
+    title: string;
+    sku: string | null;
+  }[];
+  message?: string;
+  error?: string;
+}
+
+export const searchSkuHandler = async (req: Request, res: Response) => {
   try {
-    const url = new URL(request.url);
-    const sku = url.searchParams.get("sku")?.trim();
-
-    if (!sku) {
-      return Response.json({ error: "Missing SKU parameter" }, { status: 400 });
-    }
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const sku = url.searchParams.get("sku");
+    if (!sku) return res.status(400).json({ results: [], error: "Missing SKU" });
 
     const SHOP = process.env.VITE_SHOPIFY_SHOP_DOMAIN;
     const TOKEN = process.env.VITE_SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    if (!SHOP || !TOKEN) return res.status(500).json({ results: [], error: "Missing credentials" });
 
-    if (!SHOP || !TOKEN) {
-      return Response.json({ error: "Missing Shopify credentials" }, { status: 500 });
+    // --- STEP 1: Find products matching SKU ---
+    const matchingProducts = await fetchProductsBySku(SHOP, TOKEN, sku);
+    if (matchingProducts.length === 0) {
+      return res.json({ results: [], message: "No products found with that SKU", searchedSku: sku, foundInProducts: [] });
+    }
+    const productIds = matchingProducts.map((p) => p.id);
+
+    // --- STEP 2: Fetch all metaobjects ---
+    const metaobjects = await fetchAllMetaobjectsWithProducts(SHOP, TOKEN);
+
+    // --- STEP 3: Match metaobjects containing products ---
+    const matchingMetaobjects: MetaobjectMatch[] = metaobjects
+      .filter((mo) => {
+        const references = mo.fields.flatMap((f) => f.references?.edges.map((e) => e.node.id) ?? []);
+        return productIds.some((id) => references.includes(id));
+      })
+      .map((mo) => ({
+        metaobjectId: mo.id,
+        metaobjectName: mo.displayName,
+        parentProducts: [],
+      }));
+
+    // --- STEP 4: Fetch parent products referencing these metaobjects ---
+    const parentProducts = await findParentProducts(SHOP, TOKEN, matchingMetaobjects.map((m) => m.metaobjectId));
+
+    // Attach parent products
+    for (const match of matchingMetaobjects) {
+      match.parentProducts = parentProducts.filter((p) => p.metaobjectIds.includes(match.metaobjectId));
     }
 
-    // 1️⃣ Find product(s) containing this SKU
-    const productSearchQuery = `
+    // --- STEP 5: Return results ---
+    const response: SearchResponse = {
+      results: matchingMetaobjects,
+      searchedSku: sku,
+      foundInProducts: matchingProducts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        sku: p.variants.edges[0]?.node.sku ?? null,
+      })),
+    };
+
+    if (matchingMetaobjects.length === 0) {
+      response.message = `SKU "${sku}" found in products but not used in any metaobjects`;
+    }
+
+    return res.json(response);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ results: [], error: err.message });
+  }
+};
+
+// =======================
+// Helper Functions
+// =======================
+
+async function fetchProductsBySku(shop: string, token: string, sku: string): Promise<ProductNode[]> {
+  const query = `
+    query {
+      products(first: 20, query: "sku:${sku}") {
+        edges {
+          node {
+            id
+            title
+            variants(first: 10) {
+              edges {
+                node { sku }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const response = await fetch(`https://${shop}/admin/api/2024-10/graphql.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+    body: JSON.stringify({ query }),
+  });
+  const data: { data: ProductsResponse; errors?: any } = await response.json();
+  if (data.errors) throw new Error("Product query failed");
+
+  return data.data.products.edges
+    .map((e) => e.node)
+    .filter((p) => p.variants.edges.some((v) => v.node.sku?.toLowerCase().includes(sku.toLowerCase())));
+}
+
+async function fetchAllMetaobjectsWithProducts(shop: string, token: string): Promise<Metaobject[]> {
+  const metaobjects: Metaobject[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+
+  while (hasNextPage) {
+    const query = `
       query {
-        products(first: 10, query: "sku:${sku}") {
+        metaobjects(first: 250, type: "product_builder_section"${cursor ? `, after: "${cursor}"` : ""}) {
           edges {
             node {
               id
-              title
-              variants(first: 10) {
-                edges {
-                  node {
-                    sku
+              displayName
+              fields {
+                key
+                type
+                value
+                references(first: 50) {
+                  edges {
+                    node { id }
                   }
                 }
               }
             }
           }
+          pageInfo { hasNextPage endCursor }
         }
       }
     `;
-
-    const productRes = await fetch(`https://${SHOP}/admin/api/2024-10/graphql.json`, {
+    const response = await fetch(`https://${shop}/admin/api/2024-10/graphql.json`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": TOKEN,
-      },
-      body: JSON.stringify({ query: productSearchQuery }),
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+      body: JSON.stringify({ query }),
     });
+    const data: { data: { metaobjects: { edges: { node: Metaobject }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }; errors?: any } = await response.json();
+    if (data.errors) throw new Error("Metaobject fetch failed");
 
-    const productData = await productRes.json();
+    metaobjects.push(...data.data.metaobjects.edges.map((e) => e.node));
+    hasNextPage = data.data.metaobjects.pageInfo.hasNextPage;
+    cursor = data.data.metaobjects.pageInfo.endCursor;
+  }
 
-    const foundInProducts = productData.data.products.edges.map((p: any) => {
-      const matchingVariant = p.node.variants.edges.find((v: any) =>
-        v.node.sku?.toLowerCase().includes(sku.toLowerCase())
-      );
+  return metaobjects;
+}
 
-      return {
-        id: p.node.id,
-        title: p.node.title,
-        sku: matchingVariant?.node.sku || "",
-      };
-    });
+async function findParentProducts(shop: string, token: string, metaobjectIds: string[]): Promise<ParentProduct[]> {
+  const parents: ParentProduct[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
 
-    if (!foundInProducts.length) {
-      return Response.json({
-        searchedSku: sku,
-        results: [],
-        message: "SKU not found in any product variants",
-      });
-    }
-
-    // 2️⃣ Load all metaobjects
-    const metaobjectQuery = `
+  while (hasNextPage) {
+    const query = `
       query {
-        metaobjects(first: 250, type: "add_ons") {
+        products(first: 250${cursor ? `, after: "${cursor}"` : ""}) {
           edges {
             node {
               id
-              displayName
-              fields {
-                key
-                value
-              }
+              title
+              variants(first: 1) { edges { node { sku } } }
+              addOns: metafield(namespace: "custom", key: "add_ons") { value }
+              options: metafield(namespace: "custom", key: "options") { value }
             }
           }
-        }
-        options: metaobjects(first: 250, type: "options") {
-          edges {
-            node {
-              id
-              displayName
-              fields {
-                key
-                value
-              }
-            }
-          }
+          pageInfo { hasNextPage endCursor }
         }
       }
     `;
-
-    const metaRes = await fetch(`https://${SHOP}/admin/api/2024-10/graphql.json`, {
+    const response = await fetch(`https://${shop}/admin/api/2024-10/graphql.json`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": TOKEN,
-      },
-      body: JSON.stringify({ query: metaobjectQuery }),
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+      body: JSON.stringify({ query }),
     });
+    const data: { data: ProductsResponse; errors?: any } = await response.json();
+    if (data.errors) throw new Error("Parent product fetch failed");
 
-    const metaData = await metaRes.json();
+    for (const edge of data.data.products.edges) {
+      const p = edge.node;
 
-    const allMetaobjects = [
-      ...metaData.data.metaobjects.edges.map((e: any) => ({ ...e.node, type: "add_ons" })),
-      ...metaData.data.options.edges.map((e: any) => ({ ...e.node, type: "options" })),
-    ];
-
-    // 3️⃣ Find which metaobjects reference the SKU
-    const matchingMetaobjects = allMetaobjects.filter((m: any) =>
-      m.fields.some((f: any) => f.value?.includes(sku))
-    );
-
-    if (!matchingMetaobjects.length) {
-      return Response.json({
-        searchedSku: sku,
-        foundInProducts,
-        results: [],
-        message: "SKU found in product but not referenced in any metaobjects",
-      });
-    }
-
-    // 4️⃣ Find parent products that reference those metaobjects
-    const results = [];
-
-    for (const meta of matchingMetaobjects) {
-      const parentQuery = `
-        query {
-          products(first: 50) {
-            edges {
-              node {
-                id
-                title
-                variants(first: 1) { edges { node { sku } } }
-                addOns: metafield(namespace: "custom", key: "add_ons") { value }
-                options: metafield(namespace: "custom", key: "options") { value }
-              }
-            }
-          }
-        }
-      `;
-
-      const parentRes = await fetch(`https://${SHOP}/admin/api/2024-10/graphql.json`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": TOKEN,
-        },
-        body: JSON.stringify({ query: parentQuery }),
-      });
-
-      const parentData = await parentRes.json();
-
-      const parentProducts = [];
-
-      for (const p of parentData.data.products.edges) {
-        const node = p.node;
-
-        for (const field of ["add_ons", "options"] as const) {
-          const raw = field === "add_ons" ? node.addOns?.value : node.options?.value;
-          if (raw && raw.includes(meta.id)) {
-            parentProducts.push({
-              productId: node.id,
-              productTitle: node.title,
-              productSku: node.variants.edges[0]?.node.sku || "",
-              metafieldType: field,
+      const processField = (value: string | null, type: "add_ons" | "options") => {
+        if (!value) return;
+        try {
+          const ids: string[] = JSON.parse(value);
+          const matches = ids.filter((id) => metaobjectIds.includes(id));
+          if (matches.length > 0) {
+            parents.push({
+              productId: p.id,
+              productTitle: p.title,
+              productSku: p.variants.edges[0]?.node.sku ?? null,
+              metafieldType: type,
+              metaobjectIds: matches,
             });
           }
+        } catch (e) {
+          console.error(`Error parsing ${type}:`, e);
         }
-      }
+      };
 
-      results.push({
-        metaobjectId: meta.id,
-        metaobjectName: meta.displayName,
-        parentProducts,
-      });
+      processField(p.addOns?.value ?? null, "add_ons");
+      processField(p.options?.value ?? null, "options");
     }
 
-    return Response.json({
-      searchedSku: sku,
-      foundInProducts,
-      results,
-    });
-  } catch (err: any) {
-    console.error(err);
-    return Response.json({ error: err.message || "Server error" }, { status: 500 });
+    hasNextPage = data.data.products.pageInfo.hasNextPage;
+    cursor = data.data.products.pageInfo.endCursor;
   }
+
+  return parents;
 }
