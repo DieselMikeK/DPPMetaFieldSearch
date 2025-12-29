@@ -10,7 +10,10 @@ interface ParentProduct {
 }
 
 interface MetaobjectFieldReference {
-  node: { id: string };
+  node: { 
+    __typename?: string;
+    id: string;
+  };
 }
 
 interface MetaobjectField {
@@ -201,26 +204,69 @@ async function fetchAllMetaobjectsWithProducts(shop: string, token: string): Pro
     const query = `
       query {
         metaobjects(first: 250, type: "product_builder_section"${cursor ? `, after: "${cursor}"` : ""}) {
-          edges { node { id displayName fields { key type value references(first: 50) { edges { node { id } } } } } }
+          edges { 
+            node { 
+              id 
+              displayName 
+              fields { 
+                key 
+                type 
+                value 
+                references(first: 50) { 
+                  edges { 
+                    node { 
+                      ... on Product {
+                        id
+                      }
+                    }
+                  } 
+                } 
+              } 
+            } 
+          }
           pageInfo { hasNextPage endCursor }
         }
       }
     `;
+    
     const response = await fetch(`https://${shop}/admin/api/2024-10/graphql.json`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
       body: JSON.stringify({ query }),
     });
-    const data: { data: { metaobjects: { edges: { node: Metaobject }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }; errors?: any } = await response.json();
-    if (data.errors) throw new Error("Metaobject fetch failed");
+    
+    const data: { 
+      data?: { 
+        metaobjects: { 
+          edges: { node: Metaobject }[]; 
+          pageInfo: { hasNextPage: boolean; endCursor: string | null } 
+        } 
+      }; 
+      errors?: any 
+    } = await response.json();
+    
+    // Better error logging
+    if (data.errors) {
+      console.error("GraphQL Errors:", JSON.stringify(data.errors, null, 2));
+      throw new Error(`Metaobject fetch failed: ${JSON.stringify(data.errors)}`);
+    }
+    
+    if (!data.data) {
+      console.error("No data returned from GraphQL");
+      throw new Error("No data returned from metaobjects query");
+    }
 
     metaobjects.push(...data.data.metaobjects.edges.map((e) => e.node));
     hasNextPage = data.data.metaobjects.pageInfo.hasNextPage;
     cursor = data.data.metaobjects.pageInfo.endCursor;
+    
+    console.log(`Fetched ${metaobjects.length} metaobjects so far...`);
   }
 
+  console.log(`Total metaobjects fetched: ${metaobjects.length}`);
   return metaobjects;
 }
+
 
 async function findParentProducts(shop: string, token: string, metaobjectIds: string[]): Promise<ParentProduct[]> {
   const parents: ParentProduct[] = [];
